@@ -282,3 +282,62 @@ export async function testSheetsConnection(
     throw new Error(`Fallo de conexión con Google Sheets: ${errText}`);
   }
 }
+
+/**
+ * Lists the user's spreadsheets from Google Drive.
+ */
+export async function listSpreadsheetsInDrive(accessToken: string): Promise<any[]> {
+  const query = encodeURIComponent(`mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,modifiedTime)&orderBy=modifiedTime desc&pageSize=30`,
+    {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Error al listar archivos de Google Drive: ${errText}`);
+  }
+
+  const data = await res.json();
+  return data.files || [];
+}
+
+/**
+ * Searches the user's Google Drive for a spreadsheet named "Registro de Reparto - Claudio".
+ * If found, returns its spreadsheetId. If not, automatically creates a new one with the appropriate tabs and headers.
+ */
+export async function findOrCreateAppSpreadsheet(
+  accessToken: string,
+  deliveriesSheetName: string = "Entregas",
+  summariesSheetName: string = "Resumen"
+): Promise<{ spreadsheetId: string; isNew: boolean }> {
+  const fileName = "Registro de Reparto - Claudio";
+  const query = encodeURIComponent(`name = '${fileName}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
+  
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data.files && data.files.length > 0) {
+        // Found existing file!
+        return { spreadsheetId: data.files[0].id, isNew: false };
+      }
+    }
+  } catch (err) {
+    console.error("Error searching for spreadsheet in Google Drive:", err);
+  }
+
+  // Not found or search failed, create a new one!
+  const created = await createSpreadsheet(accessToken, fileName, deliveriesSheetName, summariesSheetName);
+  return { spreadsheetId: created.spreadsheetId, isNew: true };
+}
+
