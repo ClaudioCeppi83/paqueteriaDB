@@ -20,11 +20,10 @@ export interface AfternoonReport {
   earnings: number;
 }
 
-export interface AirtableSettings {
-  pat: string;
-  baseId: string;
-  deliveriesTable: string;
-  summariesTable: string;
+export interface GoogleSheetsSettings {
+  spreadsheetId: string;
+  deliveriesSheet: string;
+  summariesSheet: string;
 }
 
 export interface GoogleAuthSettings {
@@ -38,4 +37,5 @@ export interface UserSession {
   picture: string;
   loggedIn: boolean;
   method: "google" | "local";
+  accessToken?: string;
 }

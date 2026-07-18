@@ -15,17 +15,16 @@ import {
   RefreshCw,
   Edit2
 } from "lucide-react";
-import { MorningReport, AfternoonReport, ParsedPackage, AirtableSettings } from "../types";
+import { MorningReport, AfternoonReport, ParsedPackage, GoogleSheetsSettings } from "../types";
 import { 
-  safeFetch, 
   clientParseMorning, 
-  clientParseAfternoon, 
-  clientAirtableSaveDeliveries, 
-  clientAirtableSaveSummary 
+  clientParseAfternoon 
 } from "../utils/apiFallback";
+import { appendRowsToSheet } from "../utils/googleSheets";
 
 interface DeliveryParserProps {
-  airtableSettings: AirtableSettings;
+  googleSheetsSettings: GoogleSheetsSettings;
+  accessToken?: string;
   onMorningParsed: (report: MorningReport) => void;
   onAfternoonParsed: (report: AfternoonReport) => void;
   morningReport: MorningReport | null;
@@ -35,7 +34,8 @@ interface DeliveryParserProps {
 }
 
 export default function DeliveryParser({
-  airtableSettings,
+  googleSheetsSettings,
+  accessToken,
   onMorningParsed,
   onAfternoonParsed,
   morningReport,
@@ -59,6 +59,9 @@ export default function DeliveryParser({
     const today = new Date();
     return today.toISOString().split("T")[0]; // YYYY-MM-DD
   });
+
+  const [showConfirmMorning, setShowConfirmMorning] = useState(false);
+  const [showConfirmAfternoon, setShowConfirmAfternoon] = useState(false);
 
   // Example inputs as requested by user
   const loadMorningExample = () => {
@@ -84,7 +87,6 @@ Industria:
 378
 400
 Sant Marc:
-3
 15
 Mare Nostrum:
 17
@@ -125,19 +127,26 @@ Entregados:29`);
     setMorningSyncStatus({ type: "idle" });
 
     try {
-      const result = await safeFetch<any>(
-        "/api/parse",
-        {
+      let resultData;
+      try {
+        const res = await fetch("/api/parse", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: morningText, type: "morning" }),
-        },
-        async () => ({ source: "client-fallback", data: clientParseMorning(morningText) })
-      );
+        });
+        if (res.ok) {
+          const body = await res.json();
+          resultData = body.data;
+        }
+      } catch (e) {
+        console.warn("Could not parse morning text via server. Falling back to local client parser.", e);
+      }
 
-      if (result && result.data) {
+      const parsed = resultData || clientParseMorning(morningText);
+
+      if (parsed && parsed.packages) {
         // Enforce the package format
-        const formattedPackages = result.data.packages.map((p: any) => ({
+        const formattedPackages = parsed.packages.map((p: any) => ({
           street: p.street || "Calle Desconocida",
           number: String(p.number || "S/N"),
           quantity: Number(p.quantity || 1),
@@ -146,13 +155,13 @@ Entregados:29`);
 
         const report: MorningReport = {
           packages: formattedPackages,
-          totalCount: Number(result.data.totalCount || formattedPackages.reduce((a: any, b: any) => a + b.quantity, 0)),
-          messageTotal: Number(result.data.messageTotal || 0),
+          totalCount: Number(parsed.totalCount || formattedPackages.reduce((a: any, b: any) => a + b.quantity, 0)),
+          messageTotal: Number(parsed.messageTotal || 0),
         };
 
         onMorningParsed(report);
       } else {
-        alert(result?.error || "No se pudo procesar el mensaje matutino");
+        alert("No se pudo procesar el mensaje matutino");
       }
     } catch (err: any) {
       alert("Error de red al procesar el mensaje de la mañana");
@@ -168,24 +177,31 @@ Entregados:29`);
     setAfternoonSyncStatus({ type: "idle" });
 
     try {
-      const result = await safeFetch<any>(
-        "/api/parse",
-        {
+      let resultData;
+      try {
+        const res = await fetch("/api/parse", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: afternoonText, type: "afternoon" }),
-        },
-        async () => ({ source: "client-fallback", data: clientParseAfternoon(afternoonText) })
-      );
+        });
+        if (res.ok) {
+          const body = await res.json();
+          resultData = body.data;
+        }
+      } catch (e) {
+        console.warn("Could not parse afternoon text via server. Falling back to local client parser.", e);
+      }
 
-      if (result && result.data) {
+      const parsed = resultData || clientParseAfternoon(afternoonText);
+
+      if (parsed) {
         const report: AfternoonReport = {
-          postalCode: result.data.postalCode || "08918",
-          date: result.data.date || new Date().toLocaleDateString("es-ES"),
-          received: Number(result.data.received || 0),
-          incidents: Number(result.data.incidents || 0),
-          delivered: Number(result.data.delivered || 0),
-          earnings: Number(result.data.earnings || 0),
+          postalCode: parsed.postalCode || "08918",
+          date: parsed.date || new Date().toLocaleDateString("es-ES"),
+          received: Number(parsed.received || 0),
+          incidents: Number(parsed.incidents || 0),
+          delivered: Number(parsed.delivered || 0),
+          earnings: Number(parsed.earnings || 0),
         };
 
         // Convert the parsed Date of format DD/MM/YYYY into YYYY-MM-DD for selectedDate
@@ -198,7 +214,7 @@ Entregados:29`);
 
         onAfternoonParsed(report);
       } else {
-        alert(result?.error || "No se pudo procesar el mensaje de la tarde");
+        alert("No se pudo procesar el mensaje de la tarde");
       }
     } catch (err: any) {
       alert("Error de red al procesar el mensaje de la tarde");
@@ -207,122 +223,114 @@ Entregados:29`);
     }
   };
 
-  // Airtable Sync for Individual Packages (Morning Report)
-  const handleSyncMorningToAirtable = async () => {
+  // Google Sheets Sync for Individual Packages (Morning Report)
+  const handleSyncMorningToSheets = async () => {
     if (!morningReport || morningReport.packages.length === 0) return;
-    if (!airtableSettings.pat || !airtableSettings.baseId || !airtableSettings.deliveriesTable) {
+    if (!accessToken) {
       setMorningSyncStatus({
         type: "error",
-        message: "Por favor, configura las credenciales de Airtable en Ajustes primero.",
+        message: "Por favor, inicia sesión con tu cuenta de Google para sincronizar con Google Sheets.",
+      });
+      return;
+    }
+    if (!googleSheetsSettings.spreadsheetId || !googleSheetsSettings.deliveriesSheet) {
+      setMorningSyncStatus({
+        type: "error",
+        message: "Por favor, configura el ID de Google Spreadsheet en Ajustes primero.",
       });
       return;
     }
 
     setMorningSyncStatus({ type: "saving" });
 
-    // Inject dates and status
-    const recordsToSave = morningReport.packages.map((pkg) => ({
-      date: selectedDate,
-      street: pkg.street,
-      number: pkg.number,
-      quantity: pkg.quantity,
-      status: pkg.status,
-    }));
+    // Inject dates and format for Google Sheets
+    const rows = morningReport.packages.map((pkg) => [
+      selectedDate,
+      pkg.street,
+      pkg.number,
+      pkg.quantity,
+      pkg.status || "Entregado",
+      "Badalona",
+    ]);
 
     try {
-      const result = await safeFetch<any>(
-        "/api/airtable/save-deliveries",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pat: airtableSettings.pat,
-            baseId: airtableSettings.baseId,
-            table: airtableSettings.deliveriesTable,
-            records: recordsToSave,
-          }),
-        },
-        () => clientAirtableSaveDeliveries(
-          airtableSettings.pat,
-          airtableSettings.baseId,
-          airtableSettings.deliveriesTable,
-          recordsToSave
-        )
+      await appendRowsToSheet(
+        accessToken,
+        googleSheetsSettings.spreadsheetId,
+        googleSheetsSettings.deliveriesSheet,
+        ["Fecha", "Calle", "Numero", "Cantidad", "Estado", "Sector"],
+        rows
       );
 
-      if (result && result.status === "ok") {
-        setMorningSyncStatus({
-          type: "success",
-          message: `Sincronizados correctamente ${result.count} paquetes en tu Airtable.`,
-        });
-      } else {
-        setMorningSyncStatus({
-          type: "error",
-          message: result?.error || "Error al sincronizar con Airtable.",
-        });
-      }
+      setMorningSyncStatus({
+        type: "success",
+        message: `Sincronizados correctamente ${rows.length} paquetes en tu Google Sheets.`,
+      });
     } catch (err: any) {
       setMorningSyncStatus({
         type: "error",
-        message: err.message || "Error al conectar con el servidor o Airtable.",
+        message: err.message || "Error al sincronizar con Google Sheets.",
       });
     }
   };
 
-  // Airtable Sync for Daily Summary (Afternoon Report)
-  const handleSyncAfternoonToAirtable = async () => {
+  // Google Sheets Sync for Daily Summary (Afternoon Report)
+  const handleSyncAfternoonToSheets = async () => {
     if (!afternoonReport) return;
-    if (!airtableSettings.pat || !airtableSettings.baseId || !airtableSettings.summariesTable) {
+    if (!accessToken) {
       setAfternoonSyncStatus({
         type: "error",
-        message: "Por favor, configura las credenciales de Airtable en Ajustes primero.",
+        message: "Por favor, inicia sesión con tu cuenta de Google para sincronizar con Google Sheets.",
+      });
+      return;
+    }
+    if (!googleSheetsSettings.spreadsheetId || !googleSheetsSettings.summariesSheet) {
+      setAfternoonSyncStatus({
+        type: "error",
+        message: "Por favor, configura el ID de Google Spreadsheet en Ajustes primero.",
       });
       return;
     }
 
     setAfternoonSyncStatus({ type: "saving" });
 
-    const summaryWithDate = {
-      ...afternoonReport,
-      date: selectedDate,
-    };
+    const rows = [
+      [
+        selectedDate,
+        afternoonReport.postalCode || "08918",
+        Number(afternoonReport.received),
+        Number(afternoonReport.delivered),
+        Number(afternoonReport.incidents),
+        Number(afternoonReport.earnings),
+        "Claudio",
+      ],
+    ];
 
     try {
-      const result = await safeFetch<any>(
-        "/api/airtable/save-summary",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pat: airtableSettings.pat,
-            baseId: airtableSettings.baseId,
-            table: airtableSettings.summariesTable,
-            summary: summaryWithDate,
-          }),
-        },
-        () => clientAirtableSaveSummary(
-          airtableSettings.pat,
-          airtableSettings.baseId,
-          airtableSettings.summariesTable,
-          summaryWithDate
-        )
+      await appendRowsToSheet(
+        accessToken,
+        googleSheetsSettings.spreadsheetId,
+        googleSheetsSettings.summariesSheet,
+        [
+          "Fecha",
+          "CodigoPostal",
+          "Recibidos",
+          "Entregados",
+          "Incidencias",
+          "GeneradoEuro",
+          "RolRepartidor",
+        ],
+        rows
       );
 
-      if (result && result.status === "ok") {
-        setAfternoonSyncStatus({
-          type: "success",
-          message: `Sincronizado resumen diario en Airtable. Id: ${result.record?.id || "Exitoso"}`,
-        });
-      } else {
-        setAfternoonSyncStatus({
-          type: "error",
-          message: result?.error || "Error al guardar el resumen diario en Airtable.",
-        });
-      }
+      setAfternoonSyncStatus({
+        type: "success",
+        message: `Sincronizado resumen diario en tu Google Sheets con éxito.`,
+      });
     } catch (err: any) {
       setAfternoonSyncStatus({
         type: "error",
-        message: err.message || "Error de red al conectar con el servidor o Airtable.",
+        message: err.message || "Error al guardar el resumen diario en Google Sheets.",
       });
     }
   };
@@ -346,7 +354,7 @@ Entregados:29`);
     updated[index] = {
       ...updated[index],
       [field]: value,
-    };
+    };;
     
     const newTotal = updated.reduce((sum, p) => sum + p.quantity, 0);
     setMorningReport({
@@ -600,20 +608,20 @@ Entregados:29`);
               {/* Sync controls */}
               <div className="space-y-3 pt-2">
                 <button
-                  onClick={handleSyncMorningToAirtable}
+                  onClick={() => setShowConfirmMorning(true)}
                   disabled={morningSyncStatus.type === "saving"}
                   className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl py-3 flex items-center justify-center gap-2 transition shadow-md shadow-blue-600/15 active:scale-[0.99] cursor-pointer"
-                  id="sync-morning-airtable-btn"
+                  id="sync-morning-sheets-btn"
                 >
                   {morningSyncStatus.type === "saving" ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                      <span>Sincronizando con Airtable...</span>
+                      <span>Sincronizando con Google Sheets...</span>
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4 text-white" />
-                      <span>Sincronizar {morningReport.packages.length} Entregas en Airtable</span>
+                      <span>Sincronizar {morningReport.packages.length} Entregas en Google Sheets</span>
                     </>
                   )}
                 </button>
@@ -761,20 +769,20 @@ Entregados:29`);
               {/* Sync controls */}
               <div className="space-y-3 pt-2">
                 <button
-                  onClick={handleSyncAfternoonToAirtable}
+                  onClick={() => setShowConfirmAfternoon(true)}
                   disabled={afternoonSyncStatus.type === "saving"}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl py-3 flex items-center justify-center gap-2 transition shadow-md shadow-emerald-600/15 active:scale-[0.99] cursor-pointer"
-                  id="sync-afternoon-airtable-btn"
+                  id="sync-afternoon-sheets-btn"
                 >
                   {afternoonSyncStatus.type === "saving" ? (
                     <>
                       <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                      <span>Sincronizando con Airtable...</span>
+                      <span>Sincronizando con Google Sheets...</span>
                     </>
                   ) : (
                     <>
                       <Save className="w-4 h-4 text-white" />
-                      <span>Sincronizar Resumen Diario en Airtable</span>
+                      <span>Sincronizar Resumen Diario en Google Sheets</span>
                     </>
                   )}
                 </button>
@@ -800,6 +808,69 @@ Entregados:29`);
           )}
         </div>
       </div>
+
+      {/* Confirmation Dialogs */}
+      {showConfirmMorning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-2xl">
+            <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              Confirmar Sincronización
+            </h4>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              ¿Estás seguro de que deseas añadir estos <strong>{morningReport?.packages.length} paquetes</strong> a la pestaña <strong>"{googleSheetsSettings.deliveriesSheet}"</strong> de tu Google Spreadsheet?
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowConfirmMorning(false)}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setShowConfirmMorning(false);
+                  handleSyncMorningToSheets();
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-emerald-600/10 cursor-pointer"
+              >
+                Sí, Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showConfirmAfternoon && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+          <div className="bg-white border border-slate-200 p-6 rounded-2xl max-w-sm w-full space-y-4 shadow-2xl">
+            <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-amber-500" />
+              Confirmar Sincronización
+            </h4>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              ¿Estás seguro de que deseas añadir el resumen diario a la pestaña <strong>"{googleSheetsSettings.summariesSheet}"</strong> de tu Google Spreadsheet?
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setShowConfirmAfternoon(false)}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl transition cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => {
+                  setShowConfirmAfternoon(false);
+                  handleSyncAfternoonToSheets();
+                }}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition shadow-md shadow-emerald-600/10 cursor-pointer"
+              >
+                Sí, Guardar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

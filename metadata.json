@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Delivery Rport Software",
+  "description": "Gestión de entregas y resúmenes diarios para repartidores, integrado con Google Sheets y Google Drive.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

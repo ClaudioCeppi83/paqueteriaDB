@@ -14,12 +14,12 @@ import {
   Calendar,
   RefreshCw
 } from "lucide-react";
-import { AirtableSettings, GoogleAuthSettings, UserSession, MorningReport, AfternoonReport } from "./types";
+import { GoogleSheetsSettings, GoogleAuthSettings, UserSession, MorningReport, AfternoonReport } from "./types";
 import GoogleSignIn from "./components/GoogleSignIn";
 import SettingsModal from "./components/SettingsModal";
 import DeliveryParser from "./components/DeliveryParser";
 import DeliveryStats from "./components/DeliveryStats";
-import { safeFetch, clientAirtableGetRecords } from "./utils/apiFallback";
+import { getRecentSummaryLogs } from "./utils/googleSheets";
 
 export default function App() {
   // Session State loaded from LocalStorage
@@ -28,10 +28,10 @@ export default function App() {
     return saved ? JSON.parse(saved) : { email: "", name: "", picture: "", loggedIn: false, method: "local" };
   });
 
-  // Airtable Credentials saved securely in user's browser localStorage
-  const [airtableSettings, setAirtableSettings] = useState<AirtableSettings>(() => {
-    const saved = localStorage.getItem("delivery_airtable_settings");
-    return saved ? JSON.parse(saved) : { pat: "", baseId: "", deliveriesTable: "Entregas", summariesTable: "Resúmenes" };
+  // Google Sheets Credentials saved securely in user's browser localStorage
+  const [googleSheetsSettings, setGoogleSheetsSettings] = useState<GoogleSheetsSettings>(() => {
+    const saved = localStorage.getItem("delivery_sheets_settings");
+    return saved ? JSON.parse(saved) : { spreadsheetId: "", deliveriesSheet: "Entregas", summariesSheet: "Resumen" };
   });
 
   // Google OAuth Credentials
@@ -58,9 +58,9 @@ export default function App() {
     localStorage.setItem("delivery_app_session", JSON.stringify(session));
   }, [session]);
 
-  const handleSaveAirtable = (settings: AirtableSettings) => {
-    setAirtableSettings(settings);
-    localStorage.setItem("delivery_airtable_settings", JSON.stringify(settings));
+  const handleSaveGoogleSheets = (settings: GoogleSheetsSettings) => {
+    setGoogleSheetsSettings(settings);
+    localStorage.setItem("delivery_sheets_settings", JSON.stringify(settings));
   };
 
   const handleSaveGoogle = (settings: GoogleAuthSettings) => {
@@ -73,52 +73,34 @@ export default function App() {
     localStorage.removeItem("delivery_app_session");
   };
 
-  // Fetch recent records from Airtable to show in App History
+  // Fetch recent records from Google Sheets to show in App History
   const fetchRecentRecords = async () => {
-    if (!airtableSettings.pat || !airtableSettings.baseId || !airtableSettings.summariesTable) {
+    if (!session.accessToken || !googleSheetsSettings.spreadsheetId || !googleSheetsSettings.summariesSheet) {
       return;
     }
     setLoadingLogs(true);
     setLogsError(null);
 
     try {
-      const data = await safeFetch<{ records: any[] }>(
-        "/api/airtable/get-records",
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            pat: airtableSettings.pat,
-            baseId: airtableSettings.baseId,
-            table: airtableSettings.summariesTable,
-            maxRecords: 5,
-          }),
-        },
-        () => clientAirtableGetRecords(
-          airtableSettings.pat,
-          airtableSettings.baseId,
-          airtableSettings.summariesTable,
-          5
-        )
+      const records = await getRecentSummaryLogs(
+        session.accessToken,
+        googleSheetsSettings.spreadsheetId,
+        googleSheetsSettings.summariesSheet,
+        5
       );
-
-      if (data && data.records) {
-        setRecentLogs(data.records);
-      } else {
-        setLogsError("No se pudieron recuperar los últimos registros.");
-      }
+      setRecentLogs(records);
     } catch (err: any) {
-      setLogsError(err.message || "Error al conectar con Airtable.");
+      setLogsError(err.message || "Error al conectar con Google Sheets.");
     } finally {
       setLoadingLogs(false);
     }
   };
 
   useEffect(() => {
-    if (session.loggedIn && airtableSettings.pat && airtableSettings.baseId) {
+    if (session.loggedIn && session.accessToken && googleSheetsSettings.spreadsheetId) {
       fetchRecentRecords();
     }
-  }, [session.loggedIn, airtableSettings]);
+  }, [session.loggedIn, session.accessToken, googleSheetsSettings]);
 
   if (!session.loggedIn) {
     return (
@@ -250,24 +232,24 @@ export default function App() {
           </div>
         )}
 
-        {/* Warning if Airtable is not configured */}
-        {(!airtableSettings.pat || !airtableSettings.baseId) && (
+        {/* Warning if Google Sheets is not configured */}
+        {(!googleSheetsSettings.spreadsheetId) && (
           <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-start gap-3 text-xs text-amber-900">
               <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold text-sm text-amber-800">¡Conexión a Airtable requerida!</p>
+                <p className="font-bold text-sm text-amber-800">¡Conexión a Google Sheets requerida!</p>
                 <p className="mt-1 text-slate-600">
-                  Para guardar de manera permanente tus paquetes y resúmenes diarios, configura tu Personal Access Token (PAT) y Base ID de Airtable.
+                  Para guardar de manera permanente tus paquetes y resúmenes diarios, configura el ID de tu Google Spreadsheet en Ajustes.
                 </p>
               </div>
             </div>
             <button
               onClick={() => setShowSettings(true)}
               className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl transition shrink-0 shadow-md"
-              id="configure-airtable-prompt-btn"
+              id="configure-sheets-prompt-btn"
             >
-              Configurar Airtable
+              Configurar Google Sheets
             </button>
           </div>
         )}
@@ -277,7 +259,8 @@ export default function App() {
 
         {/* Core Parsers Panels */}
         <DeliveryParser
-          airtableSettings={airtableSettings}
+          googleSheetsSettings={googleSheetsSettings}
+          accessToken={session.accessToken}
           morningReport={morningReport}
           afternoonReport={afternoonReport}
           onMorningParsed={setMorningReport}
@@ -286,16 +269,16 @@ export default function App() {
           setAfternoonReport={setAfternoonReport}
         />
 
-        {/* Recent History / Airtable log viewer */}
+        {/* Recent History / Google Sheets log viewer */}
         <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-sm" id="history-panel">
           <div className="flex items-center justify-between border-b border-slate-100 pb-4">
             <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
               <History className="w-5 h-5 text-slate-400" />
-              Historial de Resúmenes en Airtable
+              Historial de Resúmenes en Google Sheets
             </h3>
             <button
               onClick={fetchRecentRecords}
-              disabled={loadingLogs || !airtableSettings.pat || !airtableSettings.baseId}
+              disabled={loadingLogs || !session.accessToken || !googleSheetsSettings.spreadsheetId}
               className="text-xs text-blue-600 hover:underline flex items-center gap-1.5 transition disabled:text-slate-400"
               id="refresh-history-btn"
             >
@@ -304,14 +287,18 @@ export default function App() {
             </button>
           </div>
 
-          {!airtableSettings.pat || !airtableSettings.baseId ? (
+          {!googleSheetsSettings.spreadsheetId ? (
             <div className="text-xs text-slate-500 py-6 text-center">
-              Configura tus credenciales de Airtable para visualizar aquí tus últimas entregas guardadas.
+              Configura tu Spreadsheet de Google Sheets para visualizar aquí tus últimas entregas guardadas.
+            </div>
+          ) : !session.accessToken ? (
+            <div className="text-xs text-slate-500 py-6 text-center">
+              Inicia sesión con Google para cargar el historial de resúmenes directamente.
             </div>
           ) : loadingLogs ? (
             <div className="text-xs text-slate-500 py-6 text-center flex items-center justify-center gap-2">
               <RefreshCw className="w-4 h-4 animate-spin text-blue-600" />
-              <span>Cargando reportes históricos desde Airtable...</span>
+              <span>Cargando reportes históricos desde Google Sheets...</span>
             </div>
           ) : logsError ? (
             <div className="py-6 max-w-xl mx-auto">
@@ -367,10 +354,11 @@ export default function App() {
       {showSettings && (
         <SettingsModal
           onClose={() => setShowSettings(false)}
-          airtableSettings={airtableSettings}
+          googleSheetsSettings={googleSheetsSettings}
           googleSettings={googleSettings}
-          onSaveAirtable={handleSaveAirtable}
+          onSaveGoogleSheets={handleSaveGoogleSheets}
           onSaveGoogle={handleSaveGoogle}
+          accessToken={session.accessToken}
         />
       )}
 
