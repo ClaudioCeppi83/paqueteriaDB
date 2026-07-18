@@ -3,6 +3,22 @@
 
 import { MorningReport, AfternoonReport } from "../types";
 
+// Helper to format Airtable errors into friendly Spanish instructions
+export function formatAirtableError(errText: string): string {
+  if (
+    errText.includes("INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND") || 
+    errText.includes("Invalid permissions") || 
+    errText.includes("requested model was not found")
+  ) {
+    return "Error de permisos en Airtable (INVALID_PERMISSIONS_OR_MODEL_NOT_FOUND).\n\n" +
+           "Para solucionarlo, por favor sigue estos pasos en tu cuenta de Airtable:\n\n" +
+           "1. El Personal Access Token (PAT) debe tener los permisos (scopes) de lectura y escritura: 'data.records:read' y 'data.records:write'.\n" +
+           "2. Tu PAT debe tener acceso concedido a la Base actual. Ve a https://airtable.com/create/tokens, edita tu Token, busca la sección 'Access' y añade tu Base de datos actual.\n" +
+           "3. Asegúrate de que el 'Airtable Base ID' (empieza con app...) y los nombres de las tablas en la configuración de la aplicación sean exactamente iguales a los de Airtable (sin espacios adicionales).";
+  }
+  return `Error de Airtable: ${errText}`;
+}
+
 // 1. Safe Fetch Wrapper to handle client fallbacks transparently
 export async function safeFetch<T>(
   url: string,
@@ -18,12 +34,17 @@ export async function safeFetch<T>(
       return data as T;
     }
     
-    // If response was not JSON, or not OK (like a 404 on Vercel), fall back
+    // If response was not JSON, or not OK (like a 404/500 on Vercel), fall back
     console.warn(`Server API route "${url}" returned non-JSON or error status. Falling back to client-side implementation.`);
     return await fallbackFn();
-  } catch (error) {
+  } catch (error: any) {
     console.warn(`Network error or failure calling server API "${url}". Falling back to client-side implementation.`, error);
-    return await fallbackFn();
+    try {
+      return await fallbackFn();
+    } catch (fallbackError: any) {
+      // Format the error if it contains Airtable error strings
+      throw new Error(formatAirtableError(fallbackError.message || String(fallbackError)));
+    }
   }
 }
 
@@ -130,7 +151,7 @@ export async function clientAirtableTestConnection(pat: string, baseId: string, 
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Error de Airtable: ${errText}`);
+    throw new Error(formatAirtableError(errText));
   }
 
   return { status: "ok", message: "Conexión exitosa con Airtable (vía cliente)" };
@@ -147,7 +168,7 @@ export async function clientAirtableGetRecords(pat: string, baseId: string, tabl
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Error de Airtable: ${errText}`);
+    throw new Error(formatAirtableError(errText));
   }
 
   const resData = await response.json();
@@ -190,7 +211,7 @@ export async function clientAirtableSaveDeliveries(pat: string, baseId: string, 
 
     if (!response.ok) {
       const errText = await response.text();
-      throw new Error(`Error de Airtable al guardar entregas: ${errText}`);
+      throw new Error(formatAirtableError(errText));
     }
 
     const resData: any = await response.json();
@@ -230,7 +251,7 @@ export async function clientAirtableSaveSummary(pat: string, baseId: string, tab
 
   if (!response.ok) {
     const errText = await response.text();
-    throw new Error(`Error de Airtable al guardar resumen: ${errText}`);
+    throw new Error(formatAirtableError(errText));
   }
 
   const resData: any = await response.json();

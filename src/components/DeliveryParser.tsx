@@ -631,7 +631,7 @@ Entregados:29`);
                     ) : (
                       <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     )}
-                    <span>{morningSyncStatus.message}</span>
+                    <span className="whitespace-pre-line">{morningSyncStatus.message}</span>
                   </div>
                 )}
               </div>
@@ -792,7 +792,7 @@ Entregados:29`);
                     ) : (
                       <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                     )}
-                    <span>{afternoonSyncStatus.message}</span>
+                    <span className="whitespace-pre-line">{afternoonSyncStatus.message}</span>
                   </div>
                 )}
               </div>
