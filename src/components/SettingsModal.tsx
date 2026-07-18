@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, Save, Database, Shield, CheckCircle, AlertTriangle, Key, Mail, RefreshCw } from "lucide-react";
 import { AirtableSettings, GoogleAuthSettings } from "../types";
+import { safeFetch, clientAirtableTestConnection } from "../utils/apiFallback";
 
 interface SettingsModalProps {
   onClose: () => void;
@@ -56,17 +57,19 @@ export default function SettingsModal({
     setTestResult(null);
 
     try {
-      const response = await fetch("/api/airtable/test-connection", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const data = await safeFetch<any>(
+        "/api/airtable/test-connection",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ pat, baseId, table }),
         },
-        body: JSON.stringify({ pat, baseId, table }),
-      });
+        () => clientAirtableTestConnection(pat, baseId, table)
+      );
 
-      const data = await response.json();
-
-      if (response.ok) {
+      if (data && data.status === "ok") {
         setTestResult({
           type: "success",
           message: `¡Conexión exitosa! La tabla "${table}" es válida en Airtable.`,
@@ -74,13 +77,13 @@ export default function SettingsModal({
       } else {
         setTestResult({
           type: "error",
-          message: data.error || "No se pudo establecer conexión con Airtable.",
+          message: data?.error || "No se pudo establecer conexión con Airtable.",
         });
       }
     } catch (err: any) {
       setTestResult({
         type: "error",
-        message: err.message || "Error al conectar con el proxy del servidor.",
+        message: err.message || "Error al conectar con el servidor o Airtable.",
       });
     } finally {
       setTesting(null);

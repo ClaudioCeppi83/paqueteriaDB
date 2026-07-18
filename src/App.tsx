@@ -19,6 +19,7 @@ import GoogleSignIn from "./components/GoogleSignIn";
 import SettingsModal from "./components/SettingsModal";
 import DeliveryParser from "./components/DeliveryParser";
 import DeliveryStats from "./components/DeliveryStats";
+import { safeFetch, clientAirtableGetRecords } from "./utils/apiFallback";
 
 export default function App() {
   // Session State loaded from LocalStorage
@@ -81,22 +82,30 @@ export default function App() {
     setLogsError(null);
 
     try {
-      const response = await fetch("/api/airtable/get-records", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pat: airtableSettings.pat,
-          baseId: airtableSettings.baseId,
-          table: airtableSettings.summariesTable,
-          maxRecords: 5,
-        }),
-      });
+      const data = await safeFetch<{ records: any[] }>(
+        "/api/airtable/get-records",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pat: airtableSettings.pat,
+            baseId: airtableSettings.baseId,
+            table: airtableSettings.summariesTable,
+            maxRecords: 5,
+          }),
+        },
+        () => clientAirtableGetRecords(
+          airtableSettings.pat,
+          airtableSettings.baseId,
+          airtableSettings.summariesTable,
+          5
+        )
+      );
 
-      const data = await response.json();
-      if (response.ok && data.records) {
+      if (data && data.records) {
         setRecentLogs(data.records);
       } else {
-        setLogsError(data.error || "No se pudieron recuperar los últimos registros.");
+        setLogsError("No se pudieron recuperar los últimos registros.");
       }
     } catch (err: any) {
       setLogsError(err.message || "Error al conectar con Airtable.");

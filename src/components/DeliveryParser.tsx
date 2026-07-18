@@ -16,6 +16,13 @@ import {
   Edit2
 } from "lucide-react";
 import { MorningReport, AfternoonReport, ParsedPackage, AirtableSettings } from "../types";
+import { 
+  safeFetch, 
+  clientParseMorning, 
+  clientParseAfternoon, 
+  clientAirtableSaveDeliveries, 
+  clientAirtableSaveSummary 
+} from "../utils/apiFallback";
 
 interface DeliveryParserProps {
   airtableSettings: AirtableSettings;
@@ -118,14 +125,17 @@ Entregados:29`);
     setMorningSyncStatus({ type: "idle" });
 
     try {
-      const response = await fetch("/api/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: morningText, type: "morning" }),
-      });
+      const result = await safeFetch<any>(
+        "/api/parse",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: morningText, type: "morning" }),
+        },
+        async () => ({ source: "client-fallback", data: clientParseMorning(morningText) })
+      );
 
-      const result = await response.json();
-      if (response.ok && result.data) {
+      if (result && result.data) {
         // Enforce the package format
         const formattedPackages = result.data.packages.map((p: any) => ({
           street: p.street || "Calle Desconocida",
@@ -142,7 +152,7 @@ Entregados:29`);
 
         onMorningParsed(report);
       } else {
-        alert(result.error || "No se pudo procesar el mensaje matutino");
+        alert(result?.error || "No se pudo procesar el mensaje matutino");
       }
     } catch (err: any) {
       alert("Error de red al procesar el mensaje de la mañana");
@@ -158,14 +168,17 @@ Entregados:29`);
     setAfternoonSyncStatus({ type: "idle" });
 
     try {
-      const response = await fetch("/api/parse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: afternoonText, type: "afternoon" }),
-      });
+      const result = await safeFetch<any>(
+        "/api/parse",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: afternoonText, type: "afternoon" }),
+        },
+        async () => ({ source: "client-fallback", data: clientParseAfternoon(afternoonText) })
+      );
 
-      const result = await response.json();
-      if (response.ok && result.data) {
+      if (result && result.data) {
         const report: AfternoonReport = {
           postalCode: result.data.postalCode || "08918",
           date: result.data.date || new Date().toLocaleDateString("es-ES"),
@@ -185,7 +198,7 @@ Entregados:29`);
 
         onAfternoonParsed(report);
       } else {
-        alert(result.error || "No se pudo procesar el mensaje de la tarde");
+        alert(result?.error || "No se pudo procesar el mensaje de la tarde");
       }
     } catch (err: any) {
       alert("Error de red al procesar el mensaje de la tarde");
@@ -217,20 +230,27 @@ Entregados:29`);
     }));
 
     try {
-      const response = await fetch("/api/airtable/save-deliveries", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pat: airtableSettings.pat,
-          baseId: airtableSettings.baseId,
-          table: airtableSettings.deliveriesTable,
-          records: recordsToSave,
-        }),
-      });
+      const result = await safeFetch<any>(
+        "/api/airtable/save-deliveries",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pat: airtableSettings.pat,
+            baseId: airtableSettings.baseId,
+            table: airtableSettings.deliveriesTable,
+            records: recordsToSave,
+          }),
+        },
+        () => clientAirtableSaveDeliveries(
+          airtableSettings.pat,
+          airtableSettings.baseId,
+          airtableSettings.deliveriesTable,
+          recordsToSave
+        )
+      );
 
-      const result = await response.json();
-
-      if (response.ok) {
+      if (result && result.status === "ok") {
         setMorningSyncStatus({
           type: "success",
           message: `Sincronizados correctamente ${result.count} paquetes en tu Airtable.`,
@@ -238,13 +258,13 @@ Entregados:29`);
       } else {
         setMorningSyncStatus({
           type: "error",
-          message: result.error || "Error al sincronizar con Airtable.",
+          message: result?.error || "Error al sincronizar con Airtable.",
         });
       }
     } catch (err: any) {
       setMorningSyncStatus({
         type: "error",
-        message: err.message || "Error al conectar con el servidor.",
+        message: err.message || "Error al conectar con el servidor o Airtable.",
       });
     }
   };
@@ -268,20 +288,27 @@ Entregados:29`);
     };
 
     try {
-      const response = await fetch("/api/airtable/save-summary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          pat: airtableSettings.pat,
-          baseId: airtableSettings.baseId,
-          table: airtableSettings.summariesTable,
-          summary: summaryWithDate,
-        }),
-      });
+      const result = await safeFetch<any>(
+        "/api/airtable/save-summary",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pat: airtableSettings.pat,
+            baseId: airtableSettings.baseId,
+            table: airtableSettings.summariesTable,
+            summary: summaryWithDate,
+          }),
+        },
+        () => clientAirtableSaveSummary(
+          airtableSettings.pat,
+          airtableSettings.baseId,
+          airtableSettings.summariesTable,
+          summaryWithDate
+        )
+      );
 
-      const result = await response.json();
-
-      if (response.ok) {
+      if (result && result.status === "ok") {
         setAfternoonSyncStatus({
           type: "success",
           message: `Sincronizado resumen diario en Airtable. Id: ${result.record?.id || "Exitoso"}`,
@@ -289,13 +316,13 @@ Entregados:29`);
       } else {
         setAfternoonSyncStatus({
           type: "error",
-          message: result.error || "Error al guardar el resumen diario en Airtable.",
+          message: result?.error || "Error al guardar el resumen diario en Airtable.",
         });
       }
     } catch (err: any) {
       setAfternoonSyncStatus({
         type: "error",
-        message: err.message || "Error de red al conectar con el servidor.",
+        message: err.message || "Error de red al conectar con el servidor o Airtable.",
       });
     }
   };
