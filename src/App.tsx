@@ -15,7 +15,8 @@ import {
   RefreshCw,
   Compass,
   BarChart2,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Layers
 } from "lucide-react";
 import { GoogleSheetsSettings, GoogleAuthSettings, UserSession, MorningReport, AfternoonReport, ParsedPackage } from "./types";
 import GoogleSignIn from "./components/GoogleSignIn";
@@ -24,11 +25,12 @@ import DeliveryParser from "./components/DeliveryParser";
 import DeliveryStats from "./components/DeliveryStats";
 import RouteOptimizer from "./components/RouteOptimizer";
 import SheetsSelectorModal from "./components/SheetsSelectorModal";
+import WorkspaceIntegrations from "./components/WorkspaceIntegrations";
 import { getRecentSummaryLogs, findOrCreateAppSpreadsheet } from "./utils/googleSheets";
 
 export default function App() {
   // Navigation / Tabs state
-  const [activeTab, setActiveTab] = useState<"register" | "optimize">("register");
+  const [activeTab, setActiveTab] = useState<"register" | "optimize" | "workspace">("register");
 
   // Session State loaded from LocalStorage
   const [session, setSession] = useState<UserSession>(() => {
@@ -435,6 +437,18 @@ export default function App() {
               </span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab("workspace")}
+            className={`pb-4 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition cursor-pointer ${
+              activeTab === "workspace"
+                ? "border-blue-600 text-blue-600 font-extrabold"
+                : "border-transparent text-slate-400 hover:text-slate-800"
+            }`}
+            id="tab-workspace-btn"
+          >
+            <Layers className="w-4 h-4" />
+            Workspace Google (Tasks & Keep)
+          </button>
         </div>
 
         {activeTab === "register" ? (
@@ -531,13 +545,26 @@ export default function App() {
               )}
             </div>
           </>
-        ) : (
+        ) : activeTab === "optimize" ? (
           <RouteOptimizer
             morningReport={morningReport}
             recentLogs={recentLogs}
             googleSheetsSettings={googleSheetsSettings}
             accessToken={session.accessToken}
             onUpdatePackages={(pkgs) => setMorningReport(prev => prev ? { ...prev, packages: pkgs } : null)}
+          />
+        ) : (
+          <WorkspaceIntegrations
+            accessToken={session.accessToken || ""}
+            morningReport={morningReport}
+            onSelectSpreadsheet={(id, name) => {
+              const newSettings = {
+                ...googleSheetsSettings,
+                spreadsheetId: id,
+              };
+              setGoogleSheetsSettings(newSettings);
+              localStorage.setItem("delivery_sheets_settings", JSON.stringify(newSettings));
+            }}
           />
         )}
 
