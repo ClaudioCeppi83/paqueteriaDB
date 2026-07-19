@@ -24,7 +24,7 @@ import DeliveryParser from "./components/DeliveryParser";
 import DeliveryStats from "./components/DeliveryStats";
 import RouteOptimizer from "./components/RouteOptimizer";
 import SheetsSelectorModal from "./components/SheetsSelectorModal";
-import { getRecentSummaryLogs } from "./utils/googleSheets";
+import { getRecentSummaryLogs, findOrCreateAppSpreadsheet } from "./utils/googleSheets";
 
 export default function App() {
   // Navigation / Tabs state
@@ -78,12 +78,48 @@ export default function App() {
 
   const [showSheetsSelector, setShowSheetsSelector] = useState(false);
   const [autoProvisionSuccess, setAutoProvisionSuccess] = useState<string | null>(null);
+  const [isAutoProvisioning, setIsAutoProvisioning] = useState(false);
+  const [autoProvisionError, setAutoProvisionError] = useState<string | null>(null);
 
-  // Trigger sheets selector modal if user logs in but has no spreadsheet configured
+  const [geminiApiKey, setGeminiApiKey] = useState<string>(() => {
+    return localStorage.getItem("delivery_gemini_api_key") || "";
+  });
+
+  const handleSaveGeminiApiKey = (key: string) => {
+    setGeminiApiKey(key);
+    localStorage.setItem("delivery_gemini_api_key", key);
+  };
+
+  // Automatically search or create Google Sheets when the user logs in
   useEffect(() => {
-    if (session.loggedIn && session.accessToken && !googleSheetsSettings.spreadsheetId) {
-      setShowSheetsSelector(true);
+    async function runAutoProvision() {
+      if (session.loggedIn && session.accessToken && !googleSheetsSettings.spreadsheetId && !isAutoProvisioning) {
+        setIsAutoProvisioning(true);
+        setAutoProvisionError(null);
+        setAutoProvisionSuccess(null);
+        try {
+          const result = await findOrCreateAppSpreadsheet(session.accessToken, "Entregas", "Resumen");
+          const newSettings: GoogleSheetsSettings = {
+            spreadsheetId: result.spreadsheetId,
+            deliveriesSheet: "Entregas",
+            summariesSheet: "Resumen"
+          };
+          setGoogleSheetsSettings(newSettings);
+          localStorage.setItem("delivery_sheets_settings", JSON.stringify(newSettings));
+          setAutoProvisionSuccess(
+            result.isNew 
+              ? `¡Creado nuevo libro "${result.name}" en tu Google Drive y vinculado con éxito!`
+              : `¡Vinculado al libro "${result.name}" existente en Google Drive con éxito!`
+          );
+        } catch (err: any) {
+          console.error("Error auto provisioning:", err);
+          setAutoProvisionError(err.message || "Error al buscar o crear la hoja de cálculo.");
+        } finally {
+          setIsAutoProvisioning(false);
+        }
+      }
     }
+    runAutoProvision();
   }, [session.loggedIn, session.accessToken, googleSheetsSettings.spreadsheetId]);
 
   const handleLogout = () => {
@@ -270,10 +306,37 @@ export default function App() {
           </div>
         )}
 
+        {/* Auto-provisioning loading state */}
+        {isAutoProvisioning && (
+          <div className="bg-blue-50 border border-blue-200 p-5 rounded-2xl flex items-center gap-4 animate-pulse">
+            <RefreshCw className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+            <div className="text-xs text-blue-900">
+              <p className="font-bold text-sm text-blue-950">Configurando tu espacio de Google Drive y Sheets automáticamente...</p>
+              <p className="mt-0.5 text-slate-600">Buscando o creando el libro "Registro de Reparto - erceppiDEV" de forma transparente.</p>
+            </div>
+          </div>
+        )}
 
+        {autoProvisionError && (
+          <div className="bg-rose-50 border border-rose-200 p-5 rounded-2xl flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3 text-xs text-rose-900">
+              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+              <div>
+                <p className="font-bold text-sm text-rose-800">No se pudo autoconfigurar Google Sheets</p>
+                <p className="mt-0.5 text-slate-600">{autoProvisionError}</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setAutoProvisionError(null)}
+              className="text-xs text-rose-600 hover:underline font-bold cursor-pointer"
+            >
+              Descartar
+            </button>
+          </div>
+        )}
 
         {/* Warning if Google Sheets is not configured */}
-        {!googleSheetsSettings.spreadsheetId && (
+        {!googleSheetsSettings.spreadsheetId && !isAutoProvisioning && (
           <div className="bg-amber-50 border border-amber-200 p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
             <div className="flex items-start gap-3 text-xs text-amber-900">
               <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
@@ -386,6 +449,7 @@ export default function App() {
               onAfternoonParsed={setAfternoonReport}
               setMorningReport={setMorningReport}
               setAfternoonReport={setAfternoonReport}
+              geminiApiKey={geminiApiKey}
             />
 
             {/* Recent History / Google Sheets log viewer */}
@@ -488,6 +552,8 @@ export default function App() {
           onSaveGoogleSheets={handleSaveGoogleSheets}
           onSaveGoogle={handleSaveGoogle}
           accessToken={session.accessToken}
+          geminiApiKey={geminiApiKey}
+          onSaveGeminiApiKey={handleSaveGeminiApiKey}
         />
       )}
 

@@ -13,7 +13,18 @@ app.use(express.json());
 
 // Initialize Gemini SDK safely
 let aiClient: GoogleGenAI | null = null;
-function getGeminiClient(): GoogleGenAI | null {
+function getGeminiClient(customKey?: string): GoogleGenAI | null {
+  if (customKey && customKey.trim()) {
+    return new GoogleGenAI({
+      apiKey: customKey.trim(),
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+
   if (!aiClient) {
     const key = process.env.GEMINI_API_KEY;
     if (key && key !== "MY_GEMINI_API_KEY") {
@@ -122,15 +133,126 @@ function fallbackParseAfternoon(text: string) {
   };
 }
 
+const morningSchema = {
+  type: Type.OBJECT,
+  properties: {
+    packages: {
+      type: Type.ARRAY,
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          street: { type: Type.STRING },
+          number: { type: Type.STRING },
+          quantity: { type: Type.INTEGER },
+        },
+        required: ["street", "number", "quantity"],
+      },
+    },
+    totalCount: { type: Type.INTEGER },
+    messageTotal: { type: Type.INTEGER },
+  },
+  required: ["packages", "totalCount", "messageTotal"],
+};
+
+const afternoonSchema = {
+  type: Type.OBJECT,
+  properties: {
+    postalCode: { type: Type.STRING },
+    date: { type: Type.STRING },
+    received: { type: Type.INTEGER },
+    incidents: { type: Type.INTEGER },
+    delivered: { type: Type.INTEGER },
+    earnings: { type: Type.NUMBER },
+  },
+  required: ["postalCode", "date", "received", "incidents", "delivered", "earnings"],
+};
+
+// Direct OAuth-based REST call helper for Gemini API
+async function generateContentWithOAuth(
+  accessToken: string,
+  prompt: string,
+  responseSchema: any
+): Promise<any> {
+  // Using gemini-2.5-flash as the fast, state-of-the-art model with OAuth scope
+  const url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            {
+              text: prompt,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Google API returned ${response.status}: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    throw new Error("No response text returned from Gemini API via Google OAuth Access Token.");
+  }
+  return JSON.parse(text.trim());
+}
+
 // Parsing API endpoint using Gemini API or local fallback
 app.post("/api/parse", async (req, res) => {
-  const { text, type } = req.body;
+  const { text, type, geminiApiKey } = req.body;
+  const customKey = (req.headers["x-gemini-api-key"] as string) || geminiApiKey;
+  const googleAccessToken = req.headers["x-google-access-token"] as string;
 
   if (!text) {
     return res.status(400).json({ error: "El texto es obligatorio" });
   }
 
-  const ai = getGeminiClient();
+  // FIRST PRIORITY: Try executing Gemini call via the logged-in user's Google OAuth Access Token
+  if (googleAccessToken && googleAccessToken.trim()) {
+    try {
+      console.log("Attempting to parse using Google login OAuth access token directly...");
+      const prompt = type === "morning"
+        ? `Analiza el siguiente mensaje de WhatsApp matutino de un repartidor. Extrae las calles, números de casa (como "S/N" o números como "56", "29") y la cantidad de paquetes para cada dirección.
+Si una dirección tiene multiplicador (como "29 x2" o "5 x2"), la cantidad es 2 (o el número indicado). De lo contrario, la cantidad es 1.
+Ignora el nombre del repartidor ("Claudio") y cualquier saludo.
+Debes devolver un objeto JSON estricto con el esquema indicado.
+
+Mensaje de WhatsApp:
+"""
+${text}
+"""`
+        : `Analiza el siguiente mensaje de WhatsApp vespertino de un repartidor. Extrae el código postal, la fecha, la cantidad de paquetes recibidos, entregados e incidencias.
+Debes devolver un objeto JSON estricto con el esquema indicado.
+
+Mensaje de WhatsApp:
+"""
+${text}
+"""`;
+
+      const schema = type === "morning" ? morningSchema : afternoonSchema;
+      const parsedData = await generateContentWithOAuth(googleAccessToken.trim(), prompt, schema);
+      console.log("Successfully parsed using User Google OAuth Access Token.");
+      return res.json({ source: "gemini-oauth", data: parsedData });
+    } catch (oauthErr: any) {
+      console.error("Failed to parse using Google OAuth Access Token. Falling back to key/server auth:", oauthErr.message || oauthErr);
+    }
+  }
+
+  const ai = getGeminiClient(customKey);
 
   if (!ai) {
     console.log("Gemini API Key not configured or invalid, using robust local JS fallback parser.");

@@ -10,6 +10,8 @@ interface SettingsModalProps {
   onSaveGoogleSheets: (settings: GoogleSheetsSettings) => void;
   onSaveGoogle: (settings: GoogleAuthSettings) => void;
   accessToken?: string;
+  geminiApiKey: string;
+  onSaveGeminiApiKey: (key: string) => void;
 }
 
 export default function SettingsModal({
@@ -19,6 +21,8 @@ export default function SettingsModal({
   onSaveGoogleSheets,
   onSaveGoogle,
   accessToken,
+  geminiApiKey,
+  onSaveGeminiApiKey,
 }: SettingsModalProps) {
   const [spreadsheetId, setSpreadsheetId] = useState(googleSheetsSettings.spreadsheetId || "");
   const [deliveriesSheet, setDeliveriesSheet] = useState(googleSheetsSettings.deliveriesSheet || "Entregas");
@@ -26,6 +30,7 @@ export default function SettingsModal({
 
   const [clientId, setClientId] = useState(googleSettings.clientId || "");
   const [authorizedEmail, setAuthorizedEmail] = useState(googleSettings.authorizedEmail || "erceppi@gmail.com");
+  const [localGeminiKey, setLocalGeminiKey] = useState(geminiApiKey || "");
 
   const [creatingSheet, setCreatingSheet] = useState(false);
   const [testing, setTesting] = useState<string | null>(null); // "deliveries" | "summaries" | null
@@ -41,6 +46,7 @@ export default function SettingsModal({
       clientId,
       authorizedEmail,
     });
+    onSaveGeminiApiKey(localGeminiKey);
     onClose();
   };
 
@@ -297,6 +303,31 @@ export default function SettingsModal({
                   id="authorized-email-input"
                 />
               </div>
+            </div>
+          </div>
+
+          {/* Gemini API Key Segment */}
+          <div className="space-y-4 pt-2 border-t border-slate-100">
+            <h3 className="text-sm font-bold text-amber-600 uppercase tracking-wider flex items-center gap-2">
+              <Key className="w-4 h-4" />
+              Tus Capacidades de IA (Google Gemini)
+            </h3>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-slate-600">
+                Clave API de Gemini Personal (Opcional)
+              </label>
+              <input
+                type="password"
+                value={localGeminiKey}
+                onChange={(e) => setLocalGeminiKey(e.target.value)}
+                placeholder="AIzaSy..."
+                className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-amber-500 focus:ring-1 focus:ring-amber-500 rounded-xl px-4 py-2.5 text-sm outline-none font-mono text-xs text-slate-700 transition"
+                id="gemini-api-key-input"
+              />
+              <p className="text-[10px] text-slate-400 leading-normal">
+                Si pegas tu propia Gemini API Key aquí, la aplicación utilizará tus capacidades y cuotas personales de Google AI Studio para procesar los reportes en lugar de las compartidas de la app.
+              </p>
             </div>
           </div>
 

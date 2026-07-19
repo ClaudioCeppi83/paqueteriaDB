@@ -29,7 +29,7 @@ export default function GoogleSignIn({ onLogin, clientId, authorizedEmail }: Goo
         try {
           const client = window.google.accounts.oauth2.initTokenClient({
             client_id: clientId,
-            scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
+            scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/generative-language",
             callback: async (response: any) => {
               setLoadingGoogle(false);
               if (response.error) {

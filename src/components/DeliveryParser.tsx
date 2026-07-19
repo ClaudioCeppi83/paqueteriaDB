@@ -31,6 +31,7 @@ interface DeliveryParserProps {
   afternoonReport: AfternoonReport | null;
   setMorningReport: React.Dispatch<React.SetStateAction<MorningReport | null>>;
   setAfternoonReport: React.Dispatch<React.SetStateAction<AfternoonReport | null>>;
+  geminiApiKey?: string;
 }
 
 export default function DeliveryParser({
@@ -42,6 +43,7 @@ export default function DeliveryParser({
   afternoonReport,
   setMorningReport,
   setAfternoonReport,
+  geminiApiKey,
 }: DeliveryParserProps) {
   const [morningText, setMorningText] = useState("");
   const [afternoonText, setAfternoonText] = useState("");
@@ -129,9 +131,16 @@ Entregados:29`);
     try {
       let resultData;
       try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (geminiApiKey) {
+          headers["x-gemini-api-key"] = geminiApiKey;
+        }
+        if (accessToken) {
+          headers["x-google-access-token"] = accessToken;
+        }
         const res = await fetch("/api/parse", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({ text: morningText, type: "morning" }),
         });
         if (res.ok) {
@@ -179,9 +188,16 @@ Entregados:29`);
     try {
       let resultData;
       try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (geminiApiKey) {
+          headers["x-gemini-api-key"] = geminiApiKey;
+        }
+        if (accessToken) {
+          headers["x-google-access-token"] = accessToken;
+        }
         const res = await fetch("/api/parse", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({ text: afternoonText, type: "afternoon" }),
         });
         if (res.ok) {

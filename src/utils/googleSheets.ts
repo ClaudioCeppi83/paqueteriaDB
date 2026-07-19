@@ -307,37 +307,40 @@ export async function listSpreadsheetsInDrive(accessToken: string): Promise<any[
 }
 
 /**
- * Searches the user's Google Drive for a spreadsheet named "Registro de Reparto - Claudio".
- * If found, returns its spreadsheetId. If not, automatically creates a new one with the appropriate tabs and headers.
+ * Searches the user's Google Drive for a spreadsheet named "Registro de Reparto - erceppiDEV" or "Registro de Reparto - Claudio".
+ * If found, returns its spreadsheetId and name. If not, automatically creates a new one with the appropriate tabs and headers.
  */
 export async function findOrCreateAppSpreadsheet(
   accessToken: string,
   deliveriesSheetName: string = "Entregas",
   summariesSheetName: string = "Resumen"
-): Promise<{ spreadsheetId: string; isNew: boolean }> {
-  const fileName = "Registro de Reparto - Claudio";
-  const query = encodeURIComponent(`name = '${fileName}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
+): Promise<{ spreadsheetId: string; name: string; isNew: boolean }> {
+  const fileNames = ["Registro de Reparto - erceppiDEV", "Registro de Reparto - Claudio", "Registro de Reparto"];
   
-  try {
-    const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+  for (const fileName of fileNames) {
+    const query = encodeURIComponent(`name = '${fileName}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
+    try {
+      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.files && data.files.length > 0) {
-        // Found existing file!
-        return { spreadsheetId: data.files[0].id, isNew: false };
+      if (res.ok) {
+        const data = await res.json();
+        if (data.files && data.files.length > 0) {
+          // Found existing file!
+          return { spreadsheetId: data.files[0].id, name: data.files[0].name, isNew: false };
+        }
       }
+    } catch (err) {
+      console.error(`Error searching for ${fileName} in Google Drive:`, err);
     }
-  } catch (err) {
-    console.error("Error searching for spreadsheet in Google Drive:", err);
   }
 
-  // Not found or search failed, create a new one!
-  const created = await createSpreadsheet(accessToken, fileName, deliveriesSheetName, summariesSheetName);
-  return { spreadsheetId: created.spreadsheetId, isNew: true };
+  // Not found, create a new one with the modern name!
+  const newName = "Registro de Reparto - erceppiDEV";
+  const created = await createSpreadsheet(accessToken, newName, deliveriesSheetName, summariesSheetName);
+  return { spreadsheetId: created.spreadsheetId, name: newName, isNew: true };
 }
 
