@@ -20,6 +20,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import { MorningReport, ParsedPackage, GoogleSheetsSettings } from "../types";
+import RouteMap from "./RouteMap";
 
 interface RouteOptimizerProps {
   morningReport: MorningReport | null;
@@ -315,6 +316,15 @@ export default function RouteOptimizer({
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>
+        )}
+
+        {/* Route Map Visualizer */}
+        {stopsSequence.length > 0 && (
+          <RouteMap
+            stops={stopsSequence}
+            completedStreets={completedStreets}
+            onToggleStop={togglePackageStatusInStop}
+          />
         )}
 
         {/* Stop Filter Search */}
