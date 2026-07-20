@@ -29,6 +29,9 @@ export async function listTaskLists(accessToken: string): Promise<GoogleTaskList
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const text = await res.text();
     throw new Error(`Error loading Task Lists: ${text}`);
   }
@@ -51,6 +54,9 @@ export async function createTaskList(accessToken: string, title: string): Promis
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const text = await res.text();
     throw new Error(`Error creating Task List: ${text}`);
   }
@@ -69,6 +75,9 @@ export async function listTasks(accessToken: string, listId: string): Promise<Go
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const text = await res.text();
     throw new Error(`Error loading tasks: ${text}`);
   }
@@ -99,6 +108,9 @@ export async function createTask(
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const text = await res.text();
     throw new Error(`Error creating task: ${text}`);
   }
@@ -128,6 +140,9 @@ export async function updateTaskStatus(
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const text = await res.text();
     throw new Error(`Error updating task status: ${text}`);
   }
@@ -147,6 +162,9 @@ export async function deleteTask(accessToken: string, listId: string, taskId: st
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const text = await res.text();
     throw new Error(`Error deleting task: ${text}`);
   }

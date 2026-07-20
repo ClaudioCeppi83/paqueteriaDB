@@ -47,7 +47,23 @@ export default function App() {
   // Google OAuth Credentials
   const [googleSettings, setGoogleSettings] = useState<GoogleAuthSettings>(() => {
     const saved = localStorage.getItem("delivery_google_settings");
-    return saved ? JSON.parse(saved) : { clientId: "", authorizedEmail: "erceppi@gmail.com" };
+    const defaultSettings = { 
+      clientId: "117207032864-p0di9ku0avum7sea138cv834fr6frjci.apps.googleusercontent.com", 
+      authorizedEmail: "erceppi@gmail.com" 
+    };
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        return {
+          ...defaultSettings,
+          ...parsed,
+          clientId: parsed.clientId || defaultSettings.clientId
+        };
+      } catch (e) {
+        return defaultSettings;
+      }
+    }
+    return defaultSettings;
   });
 
   // Parse state
@@ -128,6 +144,29 @@ export default function App() {
     setSession({ email: "", name: "", picture: "", loggedIn: false, method: "local" });
     localStorage.removeItem("delivery_app_session");
   };
+
+  // Validate Google Access Token on load to prevent using expired session tokens
+  useEffect(() => {
+    async function validateGoogleSession() {
+      if (session.loggedIn && session.method === "google" && session.accessToken) {
+        try {
+          const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+            headers: {
+              Authorization: `Bearer ${session.accessToken}`,
+            },
+          });
+          if (!res.ok) {
+            console.warn("Google Access Token is expired or invalid. Logging out for security.");
+            handleLogout();
+          }
+        } catch (err) {
+          console.error("Failed to validate Google token on mount:", err);
+          // Only log out if it is an actual invalid response, not a general network loss
+        }
+      }
+    }
+    validateGoogleSession();
+  }, []);
 
   // Fetch recent records from Google Sheets to show in App History
   const fetchRecentRecords = async () => {
@@ -319,21 +358,35 @@ export default function App() {
           </div>
         )}
 
-        {autoProvisionError && (
-          <div className="bg-rose-50 border border-rose-200 p-5 rounded-2xl flex items-center justify-between gap-4">
+         {autoProvisionError && (
+          <div className="bg-rose-50 border border-rose-200 p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div className="flex items-center gap-3 text-xs text-rose-900">
               <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
               <div>
                 <p className="font-bold text-sm text-rose-800">No se pudo autoconfigurar Google Sheets</p>
-                <p className="mt-0.5 text-slate-600">{autoProvisionError}</p>
+                <p className="mt-0.5 text-slate-600">
+                  {autoProvisionError.includes("UNAUTHORIZED") 
+                    ? "Tu sesión de Google ha expirado o no tiene permisos suficientes. Por favor, vuelve a conectar." 
+                    : autoProvisionError}
+                </p>
               </div>
             </div>
-            <button 
-              onClick={() => setAutoProvisionError(null)}
-              className="text-xs text-rose-600 hover:underline font-bold cursor-pointer"
-            >
-              Descartar
-            </button>
+            <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+              {autoProvisionError.includes("UNAUTHORIZED") && (
+                <button
+                  onClick={handleLogout}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition cursor-pointer"
+                >
+                  Volver a Conectar
+                </button>
+              )}
+              <button 
+                onClick={() => setAutoProvisionError(null)}
+                className="text-xs text-rose-600 hover:underline font-bold cursor-pointer"
+              >
+                Descartar
+              </button>
+            </div>
           </div>
         )}
 
@@ -557,6 +610,7 @@ export default function App() {
           <WorkspaceIntegrations
             accessToken={session.accessToken || ""}
             morningReport={morningReport}
+            onLogout={handleLogout}
             onSelectSpreadsheet={(id, name) => {
               const newSettings = {
                 ...googleSheetsSettings,

@@ -52,6 +52,9 @@ export async function createSpreadsheet(
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const errText = await res.text();
     throw new Error(`Error al crear la Hoja de Cálculo: ${errText}`);
   }
@@ -112,6 +115,9 @@ export async function ensureSheetExists(
   });
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const errText = await res.text();
     throw new Error(`Error al verificar la estructura de la Hoja: ${errText}`);
   }
@@ -141,6 +147,9 @@ export async function ensureSheetExists(
     });
 
     if (!addRes.ok) {
+      if (addRes.status === 401) {
+        throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+      }
       const errText = await addRes.text();
       throw new Error(`Error al crear la pestaña "${sheetName}": ${errText}`);
     }
@@ -201,6 +210,9 @@ export async function appendRowsToSheet(
   );
 
   if (!appendRes.ok) {
+    if (appendRes.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const errText = await appendRes.text();
     throw new Error(`Error al escribir datos en Google Sheets: ${errText}`);
   }
@@ -225,6 +237,9 @@ export async function getRecentSummaryLogs(
     );
 
     if (!res.ok) {
+      if (res.status === 401) {
+        throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+      }
       const errText = await res.text();
       throw new Error(`Error al leer el resumen: ${errText}`);
     }
@@ -278,6 +293,9 @@ export async function testSheetsConnection(
   );
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const errText = await res.text();
     throw new Error(`Fallo de conexión con Google Sheets: ${errText}`);
   }
@@ -298,6 +316,9 @@ export async function listSpreadsheetsInDrive(accessToken: string): Promise<any[
   );
 
   if (!res.ok) {
+    if (res.status === 401) {
+      throw new Error("UNAUTHORIZED: Tu sesión de Google ha expirado.");
+    }
     const errText = await res.text();
     throw new Error(`Error al listar archivos de Google Drive: ${errText}`);
   }

@@ -35,6 +35,7 @@ interface WorkspaceIntegrationsProps {
   accessToken: string;
   morningReport: MorningReport | null;
   onSelectSpreadsheet?: (spreadsheetId: string, name: string) => void;
+  onLogout?: () => void;
 }
 
 interface LocalKeepNote {
@@ -58,6 +59,7 @@ export default function WorkspaceIntegrations({
   accessToken,
   morningReport,
   onSelectSpreadsheet,
+  onLogout,
 }: WorkspaceIntegrationsProps) {
   // Navigation tabs inside integrations workspace
   const [activeSubTab, setActiveSubTab] = useState<"tasks" | "keep" | "picker">("tasks");
@@ -463,9 +465,23 @@ export default function WorkspaceIntegrations({
       <div className="p-6">
         {/* Messages */}
         {error && (
-          <div className="mb-4 text-xs text-rose-800 bg-rose-50 border border-rose-100 p-3 rounded-xl flex gap-2 leading-relaxed animate-fade-in">
-            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-            <span>{error}</span>
+          <div className="mb-4 text-xs text-rose-800 bg-rose-50 border border-rose-100 p-3 rounded-xl flex items-center justify-between gap-3 leading-relaxed animate-fade-in">
+            <div className="flex gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>
+                {error.includes("UNAUTHORIZED") 
+                  ? "Tu sesión de Google ha expirado o no tiene permisos suficientes. Por favor, vuelve a iniciar sesión para reconectar." 
+                  : error}
+              </span>
+            </div>
+            {error.includes("UNAUTHORIZED") && onLogout && (
+              <button
+                onClick={onLogout}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg transition shrink-0 cursor-pointer"
+              >
+                Volver a Conectar
+              </button>
+            )}
           </div>
         )}
 
